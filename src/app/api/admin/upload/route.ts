@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { createClient, type User } from '@supabase/supabase-js';
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -18,16 +18,19 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'missing fields' }, { status: 400 });
     }
 
-    // Procurar utilizador por email
+    // procurar utilizador por email (API nova)
     const { data: users, error: listError } = await supabaseAdmin.auth.admin.listUsers();
     if (listError) {
       return NextResponse.json({ error: listError.message }, { status: 500 });
     }
 
-    let user = users.users.find((u) => u.email === email);
+    let user: User | undefined = users.users.find((u) => u.email === email);
 
     if (!user) {
-      const created = await supabaseAdmin.auth.admin.createUser({ email, email_confirm: true });
+      const created = await supabaseAdmin.auth.admin.createUser({
+        email,
+        email_confirm: true,
+      });
       if (!created.data.user) {
         return NextResponse.json({ error: 'cannot create user' }, { status: 500 });
       }
@@ -36,15 +39,17 @@ export async function POST(req: NextRequest) {
 
     const user_id = user.id;
 
-    // Inserir ou atualizar conf
     const { error } = await supabaseAdmin
       .from('vpn_profiles')
       .upsert({ user_id, country, conf_text: confText }, { onConflict: 'user_id,country' });
 
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
 
     return NextResponse.json({ ok: true });
-  } catch (e: any) {
-    return NextResponse.json({ error: e?.message || 'unexpected' }, { status: 500 });
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : 'unexpected';
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
